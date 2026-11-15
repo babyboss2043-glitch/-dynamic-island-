@@ -15,12 +15,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Project ZIP from Google Drive
+      - name: Download & Patch Project ZIP from Google Drive
         run: |
           pip install -q gdown
           gdown "1PRrvD6wvHTTcWJsFjWEDD7saC3YB46Ol" -O IslandCN_Pro_Production_v4.1.zip
           unzip -q -o IslandCN_Pro_Production_v4.1.zip
           rm -f gradle/wrapper/gradle-wrapper.jar
+          sed -i 's/import org.junit.Before/import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.ExperimentalCoroutinesApi\nimport kotlinx.coroutines.test.setMain\nimport org.junit.Before\nimport org.junit.BeforeClass/' app/src/test/java/com/vonel/islandcn/IslandEngineAndEventUnitTest.kt
+          sed -i 's/    @Before/    companion object { @JvmStatic @BeforeClass @OptIn(ExperimentalCoroutinesApi::class) fun setupMain() { Dispatchers.setMain(Dispatchers.Unconfined) } }\n\n    @Before/' app/src/test/java/com/vonel/islandcn/IslandEngineAndEventUnitTest.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -35,7 +37,13 @@ jobs:
           validate-wrappers: false
 
       - name: Run Unit Tests & Lint
-        run: gradle testDebugUnitTest lint --no-daemon --stacktrace
+        run: |
+          if ! gradle testDebugUnitTest lint --no-daemon --stacktrace > test.log 2>&1; then
+            cat test.log
+            ERR=$(grep -E "^e: |FAILURE:|FAILED|Exception" -A 3 test.log | head -n 15 | tr '\n' ' ')
+            echo "::error title=Test or Lint Error::$ERR"
+            exit 1
+          fi
 
       - name: Build Debug & Release APKs
         run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
@@ -63,4 +71,3 @@ jobs:
           files: dist/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
