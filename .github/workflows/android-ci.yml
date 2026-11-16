@@ -1,4 +1,4 @@
-name: Build IslandCN Pro v4.1 APK
+name: Build IslandCN Pro v4.2 APK
 
 on:
   push:
@@ -15,14 +15,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download & Patch Project ZIP from Google Drive
+      - name: Download Project ZIP from Google Drive
         run: |
           pip install -q gdown
-          gdown "1PRrvD6wvHTTcWJsFjWEDD7saC3YB46Ol" -O IslandCN_Pro_Production_v4.1.zip
-          unzip -q -o IslandCN_Pro_Production_v4.1.zip
+          gdown "1uoGGF2YV6ZKf61c81t-JVYcoPiBa2LoS" -O IslandCN_Pro_v4.2_Smooth.zip
+          unzip -q -o IslandCN_Pro_v4.2_Smooth.zip
           rm -f gradle/wrapper/gradle-wrapper.jar
-          sed -i 's/import org.junit.Before/import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.ExperimentalCoroutinesApi\nimport kotlinx.coroutines.test.setMain\nimport org.junit.Before\nimport org.junit.BeforeClass/' app/src/test/java/com/vonel/islandcn/IslandEngineAndEventUnitTest.kt
-          sed -i 's/    @Before/    companion object { @JvmStatic @BeforeClass @OptIn(ExperimentalCoroutinesApi::class) fun setupMain() { Dispatchers.setMain(Dispatchers.Unconfined) } }\n\n    @Before/' app/src/test/java/com/vonel/islandcn/IslandEngineAndEventUnitTest.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -37,13 +35,7 @@ jobs:
           validate-wrappers: false
 
       - name: Run Unit Tests & Lint
-        run: |
-          if ! gradle testDebugUnitTest lint --no-daemon --stacktrace > test.log 2>&1; then
-            cat test.log
-            ERR=$(grep -E "^e: |FAILURE:|FAILED|Exception" -A 3 test.log | head -n 15 | tr '\n' ' ')
-            echo "::error title=Test or Lint Error::$ERR"
-            exit 1
-          fi
+        run: gradle testDebugUnitTest lint --no-daemon --stacktrace
 
       - name: Build Debug & Release APKs
         run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
@@ -51,23 +43,23 @@ jobs:
       - name: Stage APK Files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/IslandCN-Pro-v4.1.0-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/IslandCN-Pro-v4.2.0-debug.apk
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk dist/IslandCN-Pro-v4.1.0-release-debug-signed.apk
+            cp app/build/outputs/apk/release/app-release.apk dist/IslandCN-Pro-v4.2.0-release-debug-signed.apk
           fi
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: IslandCN-Pro-v4.1.0-APKs
+          name: IslandCN-Pro-v4.2.0-APKs
           path: dist/*.apk
 
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.1.${{ github.run_number }}
-          name: "IslandCN Pro v4.1 (Build #${{ github.run_number }})"
-          body: "Compiled Debug and Release APKs for IslandCN Pro v4.1."
+          tag_name: v4.2.${{ github.run_number }}
+          name: "IslandCN Pro v4.2 (Build #${{ github.run_number }})"
+          body: "Smooth 120Hz spring morphing, crash fix, sticky USB/service notification fixes."
           files: dist/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
