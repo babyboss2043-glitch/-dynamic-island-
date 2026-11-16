@@ -1,65 +1,94 @@
-name: Build IslandCN Pro v4.2 APK
+name: IslandCN Pro Android CI
 
 on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Publish a GitHub Release with APK artifacts (manual only)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Project ZIP from Google Drive
+      - name: Download Project ZIP from Google Drive (if source not committed)
         run: |
-          pip install -q gdown
-          gdown "1uoGGF2YV6ZKf61c81t-JVYcoPiBa2LoS" -O IslandCN_Pro_v4.2_Smooth.zip
-          unzip -q -o IslandCN_Pro_v4.2_Smooth.zip
-          rm -f gradle/wrapper/gradle-wrapper.jar
+          if [ ! -f "settings.gradle.kts" ]; then
+            pip install -q gdown
+            gdown "1gxDABqWjYWOYkIDHu12JhaBCy4A6UXNo" -O IslandCN_Pro_v4.2.0_Production.zip
+            unzip -q -o IslandCN_Pro_v4.2.0_Production.zip
+          fi
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Setup Gradle 8.9
+      - name: Setup Android SDK (API 35)
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 Platform & Build Tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle 8.9 (System Gradle)
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-          validate-wrappers: false
 
       - name: Run Unit Tests & Lint
         run: gradle testDebugUnitTest lint --no-daemon --stacktrace
 
+      # Runs independently of tests/lint so APK build results & artifacts are always produced
       - name: Build Debug & Release APKs
+        if: ${{ !cancelled() }}
         run: gradle assembleDebug assembleRelease --no-daemon --stacktrace
 
       - name: Stage APK Files
+        if: always()
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/IslandCN-Pro-v4.2.0-debug.apk
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk dist/IslandCN-Pro-v4.2.0-release-debug-signed.apk
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk dist/IslandCN-Pro-v4.2.0-debug.apk
           fi
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk dist/IslandCN-Pro-v4.2.0-release-debug-signed-not-for-playstore.apk
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk dist/IslandCN-Pro-v4.2.0-release-unsigned.apk
+          fi
+          ls -la dist/ || true
 
-      - name: Upload APK Artifacts
+      - name: Upload APK & Report Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: IslandCN-Pro-v4.2.0-APKs
-          path: dist/*.apk
+          if-no-files-found: ignore
+          path: |
+            dist/*.apk
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
 
-      - name: Publish APK to GitHub Releases
+      - name: Publish GitHub Release (Manual Trigger Only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release == true }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v4.2.${{ github.run_number }}
-          name: "IslandCN Pro v4.2 (Build #${{ github.run_number }})"
-          body: "Smooth 120Hz spring morphing, crash fix, sticky USB/service notification fixes."
+          name: "IslandCN Pro v4.2.${{ github.run_number }} (Internal / Sideload Build)"
+          body: |
+            Manual CI release of **IslandCN Pro v4.2.0-PRO** (`versionCode 420`).
+            - `IslandCN-Pro-v4.2.0-debug.apk`: Debug build.
+            - `IslandCN-Pro-v4.2.0-release-debug-signed-not-for-playstore.apk`: Release-optimized build signed with the local debug key for sideloading only (not suitable for Google Play).
           files: dist/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
